@@ -101,6 +101,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Audio Editor")
         self.setUpUI()
         self.thread_pool = QThreadPool()
+        self.thread_pool.setMaxThreadCount(os.cpu_count())
 
         # 디렉토리 선택 팝업 노출
     def selectDirectory(self):

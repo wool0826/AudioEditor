@@ -50,7 +50,7 @@ class AudioFile():
         self.mean_volume = round(mean_volume, 2)
         self.mean_volume_after = round(mean_volume, 2)
 
-        self.bitrate = f'{bitrate}K'
+        self.bitrate = f'{bitrate}K' if self.extension != '.mp4' else '320K'
         self.bitrate_after = self.bitrate
 
     def isChanged(self):
@@ -82,13 +82,23 @@ class FileEditor(QRunnable):
         before_absolute_path = os.path.join(self.audio_file.directory, f'{self.audio_file.filename}{self.audio_file.extension}')
         after_absolute_path = os.path.join(self.audio_file.directory, f'{self.audio_file.filename_after}{self.audio_file.extension_after}')
 
-        result = (
-            ffmpeg
-                .input(before_absolute_path)
-                .output(after_absolute_path, af=f'volume={self.audio_file.getVolumeDiff()}dB', **{'c:v': 'copy', 'c:a': 'alac'})
-                .overwrite_output()
-                .run()
-        )
+        if self.audio_file.extension == '.flac':
+            result = (
+                ffmpeg
+                    .input(before_absolute_path)
+                    .output(after_absolute_path, af=f'volume={self.audio_file.getVolumeDiff()}dB', **{'c:v': 'copy', 'c:a': 'alac'})
+                    .overwrite_output()
+                    .run()
+            )
+        else:
+            result = (
+                ffmpeg
+                    .input(before_absolute_path)
+                    .output(after_absolute_path, af=f'volume={self.audio_file.getVolumeDiff()}dB', **{'b:a': f'{self.audio_file.bitrate_after}'})
+                    .overwrite_output()
+                    .run()
+            )
+
         print(f'{before_absolute_path} complete')
 
 class FileLoaderSignals(QObject):
@@ -182,11 +192,28 @@ class MainWindow(QMainWindow):
 
         self.drawApplyButton()
 
+    def observeComplete(self):
+        self.count = self.count + 1
+    
+        if self.max_count < self.count:
+            self.max_count = 0
+            self.count = 0
+
+            self.reserve_button.setEnabled(True)
+            self.apply_button.setEnabled(True)
+            self.drawApplyButton()
+
     def onApplyButtonClicked(self):
+        self.reserve_button.setEnabled(False)
+        self.apply_button.setEnabled(False)
+        
         for k, v in audio_files.items():
             if v.reserved:
                 fileEditor = FileEditor(v)
+                fileEditor.signals.finished.connect()
                 self.thread_pool.start(fileEditor)
+
+
 
         return
     

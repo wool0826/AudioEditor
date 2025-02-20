@@ -52,6 +52,12 @@ class AudioFile():
 
         self.bitrate = f'{bitrate}K' if self.extension != '.mp4' else '320K'
         self.bitrate_after = self.bitrate
+    
+    def clear(self):
+        self.reserved = False
+        self.extension_after = self.extension
+        self.mean_volume_after = self.mean_volume
+        self.bitrate_after = self.bitrate
 
     def isChanged(self):
         return self.mean_volume != self.mean_volume_after or self.extension != self.extension_after or self.bitrate != self.bitrate_after
@@ -99,6 +105,7 @@ class FileEditor(QRunnable):
                     .run()
             )
 
+        self.signals.finished.emit(1)
         print(f'{before_absolute_path} complete')
 
 class FileLoaderSignals(QObject):
@@ -132,18 +139,22 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Audio Editor")
         self.setUpUI()
+        self.dir_path = ""
         self.thread_pool = QThreadPool()
         self.thread_pool.setMaxThreadCount(os.cpu_count())
 
-    # 디렉토리 선택 팝업 노출
-    def selectDirectory(self):
-        dir_path = QFileDialog.getExistingDirectory(self, 'Select directory.')
-
-        if dir_path:
-            self.file_list.clear() 
+    def loadDirectory(self, dir_path):
+        if self.dir_path != dir_path:
+            self.dir_path = dir_path
+            audio_files.clear()
+            self.file_list.clear()
             self.directory_label.setText(f'workspace: {dir_path}')
+        else:
+            for _, v in audio_files.items():
+                v.clear()
 
-            for file in os.listdir(dir_path):
+        for file in os.listdir(dir_path):
+            if file not in audio_files.keys():
                 name, ext = os.path.splitext(file)
 
                 if ext in ('.mp4', '.mp3', '.m4a', '.flac'):
@@ -151,6 +162,13 @@ class MainWindow(QMainWindow):
                     file_loader.signals.finished.connect(self.file_list.addItem)
                     
                     self.thread_pool.start(file_loader)
+
+    # 디렉토리 선택 팝업 노출
+    def selectDirectory(self):
+        dir_path = QFileDialog.getExistingDirectory(self, 'Select directory.')
+
+        if dir_path:
+            self.loadDirectory(dir_path)
 
     def findIndexInComboBox(self, combo_box, text_to_find):
         index = combo_box.findText(text_to_find)
@@ -174,6 +192,9 @@ class MainWindow(QMainWindow):
     def onSelectedFileChanged(self, item):
         print('onSelectedFileChanged')
 
+        if not self.file_list.currentItem():
+            return
+        
         current_file = audio_files[item.text()]
 
         self.metadata_label.setText(current_file.getBeforeData())
@@ -192,28 +213,31 @@ class MainWindow(QMainWindow):
 
         self.drawApplyButton()
 
-    def observeComplete(self):
-        self.count = self.count + 1
+    def observeComplete(self, value):
+        self.count = self.count + value
     
         if self.max_count < self.count:
             self.max_count = 0
             self.count = 0
+                
+            self.loadDirectory(self.dir_path)
 
             self.reserve_button.setEnabled(True)
             self.apply_button.setEnabled(True)
+
             self.drawApplyButton()
 
     def onApplyButtonClicked(self):
         self.reserve_button.setEnabled(False)
         self.apply_button.setEnabled(False)
-        
+        self.count = 0
+        self.max_count = 0
+
         for k, v in audio_files.items():
             if v.reserved:
                 fileEditor = FileEditor(v)
-                fileEditor.signals.finished.connect()
+                fileEditor.signals.finished.connect(self.observeComplete)
                 self.thread_pool.start(fileEditor)
-
-
 
         return
     

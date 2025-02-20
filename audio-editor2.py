@@ -17,7 +17,10 @@ from PyQt6.QtCore import (
     QRunnable, 
     QThreadPool,
     pyqtSignal,
-    pyqtSlot
+    pyqtSlot,
+)
+from PyQt6.QtGui import (
+    QColor
 )
 
 import ffmpeg
@@ -55,9 +58,6 @@ class AudioFile():
     
     def clear(self):
         self.reserved = False
-        self.extension_after = self.extension
-        self.mean_volume_after = self.mean_volume
-        self.bitrate_after = self.bitrate
 
     def isChanged(self):
         return self.mean_volume != self.mean_volume_after or self.extension != self.extension_after or self.bitrate != self.bitrate_after
@@ -106,7 +106,6 @@ class FileEditor(QRunnable):
             )
 
         self.signals.finished.emit(1)
-        print(f'{before_absolute_path} complete')
 
 class FileLoaderSignals(QObject):
     finished = pyqtSignal(object)
@@ -140,8 +139,9 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Audio Editor")
         self.setUpUI()
         self.dir_path = ""
+        self.background_color = 'Default (Inherited)'
         self.thread_pool = QThreadPool()
-        self.thread_pool.setMaxThreadCount(os.cpu_count())
+        self.thread_pool.setMaxThreadCount(int(os.cpu_count()/2))
 
     def loadDirectory(self, dir_path):
         if self.dir_path != dir_path:
@@ -152,6 +152,9 @@ class MainWindow(QMainWindow):
         else:
             for _, v in audio_files.items():
                 v.clear()
+            
+            for i in range(self.file_list.count()):
+                self.file_list.item(i).setBackground(QColor('#7fc97f'))
 
         for file in os.listdir(dir_path):
             if file not in audio_files.keys():
@@ -169,6 +172,7 @@ class MainWindow(QMainWindow):
 
         if dir_path:
             self.loadDirectory(dir_path)
+            self.drawUI()
 
     def findIndexInComboBox(self, combo_box, text_to_find):
         index = combo_box.findText(text_to_find)
@@ -189,14 +193,12 @@ class MainWindow(QMainWindow):
             self.apply_button.setEnabled(False)
             self.apply_button.setText('3. Apply')
 
-    def onSelectedFileChanged(self, item):
-        print('onSelectedFileChanged')
-
+    def drawUI(self):
         if not self.file_list.currentItem():
             return
         
-        current_file = audio_files[item.text()]
-
+        current_file = audio_files[self.file_list.currentItem().text()]
+        
         self.metadata_label.setText(current_file.getBeforeData())
         self.metadata_after_label.setText(current_file.getAfterData())
 
@@ -210,8 +212,10 @@ class MainWindow(QMainWindow):
         self.extension_combo_box.setEnabled(True)
 
         self.reserve_button.setEnabled(current_file.canReserve())
-
         self.drawApplyButton()
+
+    def onSelectedFileChanged(self):
+        self.drawUI()
 
     def observeComplete(self, value):
         self.count = self.count + value
@@ -221,11 +225,9 @@ class MainWindow(QMainWindow):
             self.count = 0
                 
             self.loadDirectory(self.dir_path)
+            self.drawUI()
 
-            self.reserve_button.setEnabled(True)
-            self.apply_button.setEnabled(True)
-
-            self.drawApplyButton()
+            self.apply_button.setEnabled(False)
 
     def onApplyButtonClicked(self):
         self.reserve_button.setEnabled(False)
@@ -233,7 +235,7 @@ class MainWindow(QMainWindow):
         self.count = 0
         self.max_count = 0
 
-        for k, v in audio_files.items():
+        for _, v in audio_files.items():
             if v.reserved:
                 fileEditor = FileEditor(v)
                 fileEditor.signals.finished.connect(self.observeComplete)
@@ -241,14 +243,21 @@ class MainWindow(QMainWindow):
 
         return
     
-    def onReserveButtonClicked(self):
-        print('onReserveButtonClicked')
-        
-        current_file = audio_files[self.file_list.currentItem().text()]
+    def onReserveButtonClicked(self):    
+        item = self.file_list.currentItem()
+        current_file = audio_files[item.text()]
+       
         current_file.reserved = current_file.isChanged()
+
+        if current_file.reserved:
+            brush = item.background()
+            item.setBackground(brush)
+        else:
+            item.setBackground(QColor('#7fc97f'))
+
         self.reserve_button.setEnabled(current_file.canReserve())
 
-        self.drawApplyButton()
+        self.drawUI()
 
     def onExtensionChanged(self, text):
         current_file = audio_files[self.file_list.currentItem().text()]
